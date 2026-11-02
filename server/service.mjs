@@ -22,7 +22,7 @@ export function createService(config){
  const server=http.createServer(async(req,res)=>{
   res.setHeader('X-Content-Type-Options','nosniff');
   if(req.headers.origin){if(req.headers.origin!==origin)return json(res,403,{error:'This website is not allowed.'});res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');}
-  res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type');res.setHeader('Access-Control-Allow-Methods','GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, ngrok-skip-browser-warning');res.setHeader('Access-Control-Allow-Methods','GET, POST, DELETE, OPTIONS');
   if(req.method==='OPTIONS'){res.writeHead(204);return res.end();}
   try{
    const url=new URL(req.url,'http://localhost');

@@ -7,7 +7,7 @@ function text(tag,value,className){const el=document.createElement(tag);el.textC
 function message(value=''){$('notice').textContent=value;$('notice').hidden=!value;}
 function connected(ok){$('connection').textContent=ok?'● Shared storage connected':'● Storage offline';$('connection').classList.toggle('offline',!ok);}
 async function request(route,options={}){
- const headers={...(session?{Authorization:`Bearer ${session.token}`}:{})};if(options.body)headers['Content-Type']='application/json';
+ const headers={...(new URL(apiUrl,location.href).hostname.endsWith('.ngrok-free.dev')?{'ngrok-skip-browser-warning':'1'}:{}),...(session?{Authorization:`Bearer ${session.token}`}:{})};if(options.body)headers['Content-Type']='application/json';
  let res;try{res=await fetch(apiUrl+route,{...options,headers,signal:AbortSignal.timeout(60000)});}catch{connected(false);throw Error('Cannot reach the office service. Check that the office computer and secure connection are running.');}
  if(!res.ok){const data=await res.json().catch(()=>({}));if(res.status===401&&route!=='/login')logout();if(res.status>=500)connected(false);throw Error(data.error||'The request could not be completed.');}
  if(options.binary)return res.blob();return res.json();
