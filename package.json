@@ -1,0 +1,20 @@
+{
+  "name": "hub5-floor-progress-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env scripts/dev.mjs",
+    "office": "node --env-file=.env server/start.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "convert-plan": "python scripts/convert-pdf.py"
+  },
+  "devDependencies": {
+    "@mlightcad/libredwg-web": "^0.8.2",
+    "@resvg/resvg-js": "^2.6.2"
+  }
+}

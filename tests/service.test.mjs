@@ -1,0 +1,43 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {once} from 'node:events';
+import {createService} from '../server/service.mjs';
+const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+test('accounts, permissions, storage persistence and floor isolation',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'hub5-test-'));
+ const config={root,secret:'test-secret-with-at-least-thirty-two-characters',adminPassword:'admin-test',userPassword:'user-test',origin:'http://localhost:3000'};
+ let server,url;
+ async function start(){server=createService(config);server.listen(0,'127.0.0.1');await once(server,'listening');url=`http://127.0.0.1:${server.address().port}`;}
+ async function stop(){await new Promise(resolve=>server.close(resolve));}
+ await start();t.after(async()=>{await stop();await fs.rm(root,{recursive:true,force:true});});
+ const call=(route,{token,method='GET',body,origin}={})=>fetch(url+route,{method,headers:{...(token?{Authorization:'Bearer '+token}:{}),...(body?{'Content-Type':'application/json'}:{}),...(origin?{Origin:origin}:{})},body:body?JSON.stringify(body):undefined});
+ const login=async(username,password)=>{const res=await call('/login',{method:'POST',body:{username,password}});assert.equal(res.status,200);return (await res.json()).token;};
+ assert.equal((await call('/floors/1/markers')).status,401);
+ assert.equal((await call('/login',{method:'POST',body:{username:'admin',password:'wrong'}})).status,401);
+ const admin=await login('admin','admin-test'),user=await login('user','user-test');
+ assert.equal((await call('/status',{token:admin,origin:'https://evil.example'})).status,403);
+ assert.equal((await call('/status',{token:admin+'bad'})).status,401);
+ const body={x:.32,y:.64,title:'West corridor',photos:[{name:'site.png',data:png}]};
+ assert.equal((await call('/floors/1/markers',{token:user,method:'POST',body})).status,403);
+ assert.equal((await call('/floors/15/markers',{token:admin})).status,400);
+ assert.equal((await call('/floors/1/markers',{token:admin,method:'POST',body:{...body,x:2}})).status,400);
+ assert.equal((await call('/floors/1/markers',{token:admin,method:'POST',body:{...body,photos:[{name:'bad.svg',data:Buffer.from('<svg/>').toString('base64')}]}})).status,400);
+ const created=await call('/floors/1/markers',{token:admin,method:'POST',body});assert.equal(created.status,201);
+ const marker=(await created.json()).marker;assert.equal(marker.photos.length,1);
+ assert.equal((await (await call('/floors/2/markers',{token:user})).json()).markers.length,0);
+ const photoPath=`/floors/1/markers/${marker.id}/photos/${marker.photos[0].file}`;
+ const photo=await call(photoPath,{token:user});assert.equal(photo.status,200);assert.equal(photo.headers.get('content-type'),'image/png');assert.equal(Buffer.from(await photo.arrayBuffer()).toString('base64'),png);
+ assert.equal((await call(photoPath,{token:user,method:'DELETE'})).status,403);
+ await stop();await start();
+ assert.equal((await (await call('/floors/1/markers',{token:user})).json()).markers[0].title,'West corridor');
+ const added=await call(`/floors/1/markers/${marker.id}`,{token:admin,method:'POST',body:{photos:body.photos}});assert.equal(added.status,201);assert.equal((await added.json()).marker.photos.length,2);
+ assert.equal((await call(photoPath,{token:admin,method:'DELETE'})).status,200);
+ assert.equal((await call(photoPath,{token:user})).status,404);
+ const concurrent=await Promise.all([1,2,3].map(n=>call('/floors/14/markers',{token:admin,method:'POST',body:{...body,title:'Location '+n}})));assert.ok(concurrent.every(r=>r.status===201));
+ assert.equal((await (await call('/floors/14/markers',{token:user})).json()).markers.length,3);
+ assert.equal((await call(`/floors/1/markers/${marker.id}`,{token:admin,method:'DELETE'})).status,200);
+ assert.equal((await (await call('/floors/1/markers',{token:user})).json()).markers.length,0);
+});

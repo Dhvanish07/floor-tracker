@@ -1,0 +1,9 @@
+node_modules/
+.tools/
+.env
+.env.*
+!.env.example
+local-storage/
+source/plan-data.json
+.vercel/
+*.log

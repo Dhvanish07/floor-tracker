@@ -1,0 +1,9 @@
+.env
+.env.*
+local-storage/
+source/
+server/
+tests/
+node_modules/
+.tools/
+README.md
