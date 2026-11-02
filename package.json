@@ -7,14 +7,25 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "node --env-file-if-exists=.env scripts/dev.mjs",
+    "dev": "next dev --hostname 127.0.0.1",
     "office": "node --env-file=.env server/start.mjs",
-    "build": "node scripts/build.mjs",
+    "build": "next build",
     "test": "node --test tests/*.test.mjs",
-    "convert-plan": "python scripts/convert-pdf.py"
+    "convert-plan": "python scripts/convert-pdf.py",
+    "start": "next start",
+    "cloud:setup": "node --env-file=.env --env-file=.env.cloud.local scripts/setup-cloud.mjs",
+    "cloud:migrate": "node --env-file=.env --env-file=.env.cloud.local scripts/migrate-storage.mjs",
+    "cloud:cleanup": "node --env-file=.env --env-file=.env.cloud.local scripts/cleanup-cloud.mjs"
   },
   "devDependencies": {
     "@mlightcad/libredwg-web": "^0.8.2",
     "@resvg/resvg-js": "^2.6.2"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "next": "^16.4.4",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   }
 }

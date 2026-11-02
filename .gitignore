@@ -7,3 +7,5 @@ local-storage/
 source/plan-data.json
 .vercel/
 *.log
+
+.next/

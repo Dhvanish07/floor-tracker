@@ -5,10 +5,10 @@ let zoom=1,offset={x:0,y:0},base={w:1,h:1},requestVersion=0,galleryVersion=0;
 const objectUrls=new Set();
 function text(tag,value,className){const el=document.createElement(tag);el.textContent=value;if(className)el.className=className;return el;}
 function message(value=''){$('notice').textContent=value;$('notice').hidden=!value;}
-function connected(ok){$('connection').textContent=ok?'● Shared storage connected':'● Storage offline';$('connection').classList.toggle('offline',!ok);}
+function connected(ok){$('connection').textContent=ok?'● Cloud storage connected':'● Storage offline';$('connection').classList.toggle('offline',!ok);}
 async function request(route,options={}){
- const headers={...(new URL(apiUrl,location.href).hostname.endsWith('.ngrok-free.dev')?{'ngrok-skip-browser-warning':'1'}:{}),...(session?{Authorization:`Bearer ${session.token}`}:{})};if(options.body)headers['Content-Type']='application/json';
- let res;try{res=await fetch(apiUrl+route,{...options,headers,signal:AbortSignal.timeout(60000)});}catch{connected(false);throw Error('Cannot reach the office service. Check that the office computer and secure connection are running.');}
+ const headers={...(session?{Authorization:`Bearer ${session.token}`}:{})};if(options.body)headers['Content-Type']='application/json';
+ let res;try{res=await fetch(apiUrl+route,{...options,headers,signal:AbortSignal.timeout(60000)});}catch{connected(false);throw Error('Cannot reach the app. Check your internet connection and try again.');}
  if(!res.ok){const data=await res.json().catch(()=>({}));if(res.status===401&&route!=='/login')logout();if(res.status>=500)connected(false);throw Error(data.error||'The request could not be completed.');}
  if(options.binary)return res.blob();return res.json();
 }
@@ -49,7 +49,7 @@ async function openGallery(marker){
  const thisFloor=floor;
  for(const p of marker.photos){const figure=document.createElement('figure');figure.className='photo-item';const loading=text('div','Loading photo…','empty-state');figure.append(loading);const caption=document.createElement('figcaption');caption.className='photo-caption';const label=text('span',p.name);label.append(text('small',formatDate(p.createdAt)));caption.append(label);
  if(session.role==='admin'){const del=text('button','Delete photo','danger');del.onclick=()=>removePhoto(marker,p,thisFloor,del);caption.append(del);}figure.append(caption);$('gallery-photos').append(figure);
- request(`/floors/${thisFloor}/markers/${marker.id}/photos/${p.file}`,{binary:true}).then(blob=>{if(version!==galleryVersion||!$('gallery').open)return;const url=URL.createObjectURL(blob);objectUrls.add(url);const img=document.createElement('img');img.src=url;img.alt=p.name;const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener';link.className='photo-open';link.title='Open full-size photo';link.setAttribute('aria-label',`Open ${p.name} full size in a new tab`);link.append(img);loading.replaceWith(link);}).catch(e=>{if(version===galleryVersion)loading.textContent=e.message;});
+ request(`/floors/${thisFloor}/markers/${marker.id}/photos/${p.file}`,{}).then(({url})=>{if(version!==galleryVersion||!$('gallery').open)return;const img=document.createElement('img');img.src=url;img.alt=p.name;const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener';link.className='photo-open';link.title='Open full-size photo';link.setAttribute('aria-label',`Open ${p.name} full size in a new tab`);link.append(img);loading.replaceWith(link);}).catch(e=>{if(version===galleryVersion)loading.textContent=e.message;});
  }
 }
 async function removePhoto(marker,photo,thisFloor,button){if(!confirm('Delete this photo? This cannot be undone.'))return;button.disabled=true;try{await request(`/floors/${thisFloor}/markers/${marker.id}/photos/${photo.file}`,{method:'DELETE'});$('gallery').close();await loadFloor();const updated=markers.find(m=>m.id===marker.id);if(updated)openGallery(updated);}catch(e){$('gallery-error').textContent=e.message;button.disabled=false;}}
@@ -60,14 +60,16 @@ $('add-photos').onclick=()=>{$('gallery').close();openUpload();};
 document.querySelectorAll('.close-dialog').forEach(b=>b.onclick=()=>{if(!busy)b.closest('dialog').close();});
 $('upload-dialog').addEventListener('cancel',e=>{if(busy)e.preventDefault();});
 $('photo-input').onchange=()=>{$('selected-files').replaceChildren(...Array.from($('photo-input').files).map(f=>text('div',`${f.name} · ${(f.size/1024/1024).toFixed(1)} MB`)));};
-function readFile(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({name:file.name,data:reader.result.split(',')[1]});reader.onerror=()=>reject(Error('Could not read '+file.name));reader.readAsDataURL(file);});}
 $('upload-form').onsubmit=async e=>{
  e.preventDefault();if(busy)return;const files=Array.from($('photo-input').files);$('upload-error').textContent='';
  if(!files.length||files.length>10||files.some(f=>f.size>8*1024*1024||!['image/jpeg','image/png','image/webp'].includes(f.type))||files.reduce((s,f)=>s+f.size,0)>12*1024*1024){$('upload-error').textContent='Choose 1–10 JPG, PNG or WebP photos, under 8 MB each and 12 MB in total.';return;}
  busy=true;$('save-upload').disabled=true;$('save-upload').textContent='Saving photos…';
- try{const photos=await Promise.all(files.map(readFile));const target=selected||pending;const route=`/floors/${target.floor}/markers${selected?'/'+selected.id:''}`;await request(route,{method:'POST',body:JSON.stringify({photos,x:target.x,y:target.y,title:$('location-title').value.trim()||'Photo location'})});$('upload-dialog').close();await loadFloor();}
+ try{const target=selected||pending;const route=`/floors/${target.floor}/markers${selected?'/'+selected.id:''}`;
+ const {uploadId,uploads}=await request(route,{method:'POST',body:JSON.stringify({photos:files.map(f=>({name:f.name,type:f.type,size:f.size})),x:target.x,y:target.y,title:$('location-title').value.trim()||'Photo location'})});
+ for(let i=0;i<files.length;i++){const response=await fetch(uploads[i].url,{method:'PUT',headers:{'Content-Type':files[i].type,'x-upsert':'false'},body:files[i],signal:AbortSignal.timeout(120000)});if(!response.ok)throw Error('Photo upload failed. Check your connection and try again.');}
+ await request('/uploads/complete',{method:'POST',body:JSON.stringify({uploadId})});$('upload-dialog').close();await loadFloor();}
  catch(e){$('upload-error').textContent=e.message;}finally{busy=false;$('save-upload').disabled=false;$('save-upload').textContent='Save photos ↗';}
 };
 $('login-form').onsubmit=async e=>{e.preventDefault();$('login-error').textContent='';$('sign-in').disabled=true;try{if(!apiUrl)await config();session=await request('/login',{method:'POST',body:JSON.stringify({username:$('username').value.trim().toLowerCase(),password:$('password').value})});sessionStorage.setItem('hub5-session',JSON.stringify(session));$('password').value='';showWorkspace();}catch(e){$('login-error').textContent=e.message;}finally{$('sign-in').disabled=false;}};
-async function config(){const res=await fetch('/api/config');const data=await res.json();if(!res.ok)throw Error(data.error||'The office service address has not been configured.');const url=new URL(data.apiUrl);if(url.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(url.hostname))throw Error('Office service requires an HTTPS address.');apiUrl=data.apiUrl.replace(/\/$/,'');}
+async function config(){apiUrl='/api';}
 try{await config();try{session=JSON.parse(sessionStorage.getItem('hub5-session'));}catch{sessionStorage.removeItem('hub5-session');}if(session?.token&&['admin','user'].includes(session.role)){await request('/status');showWorkspace();}}catch(e){$('login-error').textContent=e.message;}
